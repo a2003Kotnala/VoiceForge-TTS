@@ -1,0 +1,14 @@
+node_modules
+frontend/node_modules
+frontend/.next
+frontend/coverage
+backend/node_modules
+backend/dist
+backend/coverage
+backend/data
+backend/storage/audio/*
+!backend/storage/audio/.gitkeep
+.env
+.env.local
+.DS_Store
+npm-debug.log*

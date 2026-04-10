@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: voiceforge-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: REQUEST_BODY_LIMIT
+        value: 32kb
+      - key: MAX_TEXT_LENGTH
+        value: 4500
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 60000
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: 12
+      - key: TTS_PROVIDER
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT_ID
+        sync: false
+      - key: GOOGLE_CLOUD_CREDENTIALS_JSON
+        sync: false
+      - key: BACKEND_BASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: DATABASE_PATH
+        sync: false
+      - key: AUDIO_STORAGE_PATH
+        sync: false
