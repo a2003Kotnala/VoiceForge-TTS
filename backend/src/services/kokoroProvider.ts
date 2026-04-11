@@ -33,8 +33,24 @@ function withNoTrailingSlash(value: string) {
   return value.replace(/\/$/, "");
 }
 
+function fallbackErrorMessage(response: Response) {
+  switch (response.status) {
+    case 401:
+      return "Kokoro rejected the request. Check that KOKORO_SERVICE_API_KEY matches on both services.";
+    case 404:
+      return "Kokoro endpoint was not found. Check that KOKORO_SERVICE_URL points to the Kokoro base URL.";
+    case 502:
+    case 503:
+    case 504:
+      return "Kokoro is unavailable on Render right now. Check that the Kokoro service is healthy and listening on Render's PORT.";
+    default:
+      return `Kokoro failed with HTTP ${response.status}.`;
+  }
+}
+
 async function parseError(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
+  const fallbackMessage = fallbackErrorMessage(response);
 
   if (contentType.includes("application/json")) {
     const payload = (await response.json()) as {
@@ -43,10 +59,16 @@ async function parseError(response: Response) {
       message?: string;
     };
 
-    return payload.detail ?? payload.error ?? payload.message ?? "Request failed.";
+    return payload.detail ?? payload.error ?? payload.message ?? fallbackMessage;
   }
 
-  return (await response.text()) || "Request failed.";
+  const body = (await response.text()).trim();
+
+  if (contentType.includes("text/html") || /^<!doctype html/i.test(body) || /^<html/i.test(body)) {
+    return fallbackMessage;
+  }
+
+  return body || fallbackMessage;
 }
 
 export class KokoroProvider implements TtsProvider {

@@ -133,6 +133,33 @@ async function withFakeKokoroService(task) {
   }
 }
 
+async function withBrokenKokoroService(task) {
+  const server = http.createServer((req, res) => {
+    if (req.url === "/voices" && req.method === "GET") {
+      res.writeHead(502, {
+        "content-type": "text/html"
+      });
+      res.end("<!DOCTYPE html><html><body><h1>502 Bad Gateway</h1></body></html>");
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const serviceUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    await task(serviceUrl);
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
+  }
+}
+
 async function runProviderTests() {
   const mockProvider = createTtsProvider({
     provider: "mock",
@@ -181,6 +208,28 @@ async function runProviderTests() {
     assert.equal(result.resolvedLanguage, "en-IN");
     assert.equal(result.extension, "wav");
     assert.equal(result.metadata.model, "Kokoro-82M");
+  });
+
+  await withBrokenKokoroService(async (serviceUrl) => {
+    const kokoroProvider = createTtsProvider({
+      provider: "kokoro",
+      maxTextLength: 3200,
+      kokoroServiceUrl: serviceUrl,
+      kokoroServiceTimeoutMs: 5000
+    });
+
+    await assert.rejects(
+      () => kokoroProvider.getVoices(),
+      (error) => {
+        assert.equal(error.name, "AppError");
+        assert.equal(error.statusCode, 503);
+        assert.match(
+          error.message,
+          /Kokoro is unavailable on Render right now/i
+        );
+        return true;
+      }
+    );
   });
 }
 
