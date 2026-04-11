@@ -5,16 +5,16 @@ type StatusPillProps = {
 };
 
 const statusStyles: Record<StatusPillProps["status"], string> = {
-  processing: "border-amber-400/30 bg-amber-400/10 text-amber-100",
-  completed: "border-emerald-400/30 bg-emerald-400/10 text-emerald-100",
-  failed: "border-rose-400/30 bg-rose-400/10 text-rose-100"
+  processing: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  completed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  failed: "border-rose-500/30 bg-rose-500/10 text-rose-300"
 };
 
 export function StatusPill({ status }: StatusPillProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]",
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium",
         statusStyles[status]
       )}
     >

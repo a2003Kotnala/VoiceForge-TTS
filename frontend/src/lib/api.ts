@@ -2,6 +2,7 @@ import type {
   GenerateSpeechPayload,
   HistoryRecord,
   HistoryResponse,
+  TextAnalysisResponse,
   VoicesResponse
 } from "./types";
 
@@ -69,6 +70,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  analyzeText(text: string) {
+    return request<TextAnalysisResponse>("/api/tts/analyze", {
+      method: "POST",
+      body: JSON.stringify({ text })
+    });
+  },
   getVoices() {
     return request<VoicesResponse>("/api/tts/voices");
   },

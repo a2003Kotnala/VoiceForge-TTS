@@ -1,29 +1,114 @@
 import { AppError } from "../utils/errors";
-import { GoogleCloudTtsProvider } from "./googleCloudProvider";
+import { KokoroProvider } from "./kokoroProvider";
 import { MockTtsProvider } from "./mockProvider";
 
+export const EMOTION_IDS = [
+  "neutral",
+  "calm",
+  "friendly",
+  "professional",
+  "serious",
+  "cheerful",
+  "sad",
+  "angry",
+  "excited",
+  "storytelling"
+] as const;
+
+export type EmotionOption = (typeof EMOTION_IDS)[number];
+
+export type EmotionDescriptor = {
+  id: EmotionOption;
+  label: string;
+  description: string;
+};
+
+export const EMOTION_OPTIONS: EmotionDescriptor[] = [
+  {
+    id: "neutral",
+    label: "Neutral",
+    description: "Clear and even for everyday reading."
+  },
+  {
+    id: "calm",
+    label: "Calm",
+    description: "Softer pacing with a more relaxed delivery."
+  },
+  {
+    id: "friendly",
+    label: "Friendly",
+    description: "Warm and approachable without sounding casual."
+  },
+  {
+    id: "professional",
+    label: "Professional",
+    description: "Steady and composed for meetings, updates, and explainers."
+  },
+  {
+    id: "serious",
+    label: "Serious",
+    description: "Grounded and lower-energy for weightier passages."
+  },
+  {
+    id: "cheerful",
+    label: "Cheerful",
+    description: "Light and upbeat for positive messages."
+  },
+  {
+    id: "sad",
+    label: "Sad",
+    description: "Gentler pacing for reflective or difficult copy."
+  },
+  {
+    id: "angry",
+    label: "Angry",
+    description: "Sharper and firmer when the text needs force."
+  },
+  {
+    id: "excited",
+    label: "Excited",
+    description: "Higher energy with more lift and urgency."
+  },
+  {
+    id: "storytelling",
+    label: "Storytelling",
+    description: "Slightly more expressive with room between ideas."
+  }
+];
+
 export type TtsCapabilities = {
+  emotions: boolean;
   speed: boolean;
   pitch: boolean;
-  volume: boolean;
+  expressiveness: boolean;
+  languageDetection: boolean;
 };
 
 export type VoiceOption = {
   id: string;
   name: string;
+  displayName: string;
+  description: string;
+  presentation: string;
+  accentLabel?: string | null;
   languages: string[];
-  accent?: string | null;
-  gender?: string | null;
   provider: string;
+  quality?: string | null;
+  recommended?: boolean;
+  previewText?: string | null;
+  sortOrder: number;
 };
 
 export type GenerateSpeechInput = {
   text: string;
-  voice: string;
-  language: string;
+  voice?: string;
+  voiceLabel?: string;
+  language?: string;
+  emotion: EmotionOption;
   speed?: number;
   pitch?: number;
-  volume?: number;
+  expressiveness?: number;
+  pauses?: number;
   requestId?: string;
 };
 
@@ -33,6 +118,7 @@ export type GeneratedSpeech = {
   extension: string;
   provider: string;
   resolvedVoice: string;
+  resolvedVoiceLabel?: string;
   resolvedLanguage: string;
   metadata: Record<string, unknown>;
 };
@@ -46,26 +132,33 @@ export interface TtsProvider {
 }
 
 export type TtsProviderFactoryConfig = {
-  provider: "google" | "mock";
+  provider: "kokoro" | "mock";
   maxTextLength: number;
-  googleCloudProjectId?: string;
-  googleCloudCredentialsJson?: string;
+  kokoroServiceUrl?: string;
+  kokoroServiceApiKey?: string;
+  kokoroServiceTimeoutMs: number;
 };
 
 class UnavailableTtsProvider implements TtsProvider {
   public readonly name: string;
   public readonly maxTextLength: number;
 
-  constructor(name: string, maxTextLength: number, private readonly message: string) {
+  constructor(
+    name: string,
+    maxTextLength: number,
+    private readonly message: string
+  ) {
     this.name = name;
     this.maxTextLength = maxTextLength;
   }
 
   getCapabilities(): TtsCapabilities {
     return {
+      emotions: true,
       speed: true,
       pitch: true,
-      volume: true
+      expressiveness: true,
+      languageDetection: true
     };
   }
 
@@ -83,27 +176,18 @@ export function createTtsProvider(config: TtsProviderFactoryConfig): TtsProvider
     return new MockTtsProvider(config.maxTextLength);
   }
 
-  if (!config.googleCloudProjectId || !config.googleCloudCredentialsJson) {
+  if (!config.kokoroServiceUrl) {
     return new UnavailableTtsProvider(
-      "google",
+      "kokoro",
       config.maxTextLength,
-      "Google Cloud Text-to-Speech is not configured. Add GOOGLE_CLOUD_PROJECT_ID and GOOGLE_CLOUD_CREDENTIALS_JSON."
+      "Kokoro is not configured. Add KOKORO_SERVICE_URL so the backend can reach the Kokoro inference service."
     );
   }
 
-  try {
-    return new GoogleCloudTtsProvider({
-      maxTextLength: config.maxTextLength,
-      projectId: config.googleCloudProjectId,
-      credentialsJson: config.googleCloudCredentialsJson
-    });
-  } catch (error) {
-    return new UnavailableTtsProvider(
-      "google",
-      config.maxTextLength,
-      error instanceof Error
-        ? error.message
-        : "Google Cloud Text-to-Speech credentials could not be parsed."
-    );
-  }
+  return new KokoroProvider({
+    maxTextLength: config.maxTextLength,
+    serviceUrl: config.kokoroServiceUrl,
+    apiKey: config.kokoroServiceApiKey,
+    timeoutMs: config.kokoroServiceTimeoutMs
+  });
 }

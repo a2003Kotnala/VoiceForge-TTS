@@ -8,13 +8,17 @@ import {
 
 import initSqlJs, { type Database } from "sql.js";
 
+import type { EmotionOption } from "../services/ttsProvider";
+
 export type GenerationStatus = "processing" | "completed" | "failed";
 
 export type HistoryRecord = {
   id: string;
   text: string;
   voice: string;
+  voiceLabel: string | null;
   language: string;
+  emotion: EmotionOption;
   status: GenerationStatus;
   provider: string;
   audioUrl: string | null;
@@ -28,7 +32,9 @@ type DatabaseRow = {
   id: string;
   text: string;
   voice: string;
+  voice_label: string | null;
   language: string;
+  emotion: EmotionOption;
   status: GenerationStatus;
   provider: string;
   audio_url: string | null;
@@ -74,7 +80,9 @@ export class HistoryRepository {
         id TEXT PRIMARY KEY,
         text TEXT NOT NULL,
         voice TEXT NOT NULL,
+        voice_label TEXT,
         language TEXT NOT NULL,
+        emotion TEXT NOT NULL DEFAULT 'neutral',
         status TEXT NOT NULL,
         provider TEXT NOT NULL,
         audio_url TEXT,
@@ -84,6 +92,8 @@ export class HistoryRepository {
         updated_at TEXT NOT NULL
       );
     `);
+    repository.ensureColumn("voice_label", "TEXT");
+    repository.ensureColumn("emotion", "TEXT NOT NULL DEFAULT 'neutral'");
     repository.persist();
 
     return repository;
@@ -93,7 +103,9 @@ export class HistoryRepository {
     id: string;
     text: string;
     voice: string;
+    voiceLabel?: string | null;
     language: string;
+    emotion: EmotionOption;
     provider: string;
     metadata?: Record<string, unknown>;
     createdAt: string;
@@ -104,19 +116,23 @@ export class HistoryRepository {
           id,
           text,
           voice,
+          voice_label,
           language,
+          emotion,
           status,
           provider,
           metadata,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, 'processing', ?, ?, ?, ?)
       `,
       [
         entry.id,
         entry.text,
         entry.voice,
+        entry.voiceLabel ?? null,
         entry.language,
+        entry.emotion,
         entry.provider,
         entry.metadata ? JSON.stringify(entry.metadata) : null,
         entry.createdAt,
@@ -224,6 +240,18 @@ export class HistoryRepository {
     this.db.close();
   }
 
+  private ensureColumn(name: string, definition: string) {
+    const statement = this.db.exec("PRAGMA table_info(generation_history);");
+    const columnNames =
+      statement[0]?.values.map((row) => String(row[1]).toLowerCase()) ?? [];
+
+    if (!columnNames.includes(name.toLowerCase())) {
+      this.db.run(
+        `ALTER TABLE generation_history ADD COLUMN ${name} ${definition};`
+      );
+    }
+  }
+
   private query(sql: string, params: Array<string | number | null>) {
     const statement = this.db.prepare(sql, params);
     const rows: HistoryRecord[] = [];
@@ -245,11 +273,15 @@ export class HistoryRepository {
       id: row.id,
       text: row.text,
       voice: row.voice,
+      voiceLabel: row.voice_label,
       language: row.language,
+      emotion: row.emotion ?? "neutral",
       status: row.status,
       provider: row.provider,
       audioUrl: row.audio_url,
-      metadata: row.metadata ? (JSON.parse(row.metadata) as Record<string, unknown>) : null,
+      metadata: row.metadata
+        ? (JSON.parse(row.metadata) as Record<string, unknown>)
+        : null,
       errorMessage: row.error_message,
       createdAt: row.created_at,
       updatedAt: row.updated_at

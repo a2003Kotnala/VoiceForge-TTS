@@ -11,6 +11,10 @@ export function createHealthRouter(runtimeEnv: RuntimeEnv) {
       service: "voiceforge-backend",
       provider: runtimeEnv.TTS_PROVIDER,
       providerConfigured: runtimeEnv.PROVIDER_CONFIGURED,
+      storage: {
+        history: "file-backed",
+        audio: "disk-backed"
+      },
       timestamp: new Date().toISOString()
     });
   });

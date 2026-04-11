@@ -13,7 +13,7 @@ const config: Config = {
         sans: ["var(--font-body)", "sans-serif"]
       },
       boxShadow: {
-        glow: "0 20px 80px rgba(13, 148, 136, 0.24)"
+        card: "0 8px 24px rgba(28, 25, 23, 0.06)"
       }
     },
   },

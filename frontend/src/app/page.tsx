@@ -1,66 +1,35 @@
-import { Navbar } from "@/components/Navbar";
+import { Header } from "@/components/Header";
 import { VoiceForgeShell } from "@/components/VoiceForgeShell";
-
-const highlights = [
-  "Secure backend-only provider credentials",
-  "Playback, download, and recent history out of the box",
-  "Render + Vercel deployment flow with typed env handling"
-];
 
 export default function Home() {
   return (
-    <div className="relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[32rem] bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.22),_transparent_40%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.22),_transparent_38%)]" />
-      <div className="pointer-events-none absolute left-1/2 top-72 h-80 w-80 -translate-x-1/2 rounded-full bg-teal-300/20 blur-3xl" />
+    <div className="min-h-screen text-[color:var(--text-primary)]">
+      <Header />
 
-      <Navbar />
-
-      <main className="relative mx-auto max-w-7xl px-6 pb-16 lg:px-10 lg:pb-24">
-        <section className="grid gap-10 pb-12 pt-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-end lg:pb-20">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.4em] text-teal-800">
-              Text To Speech, Fully Shippable
-            </p>
-            <h1 className="mt-6 max-w-3xl font-display text-5xl leading-tight text-slate-950 md:text-6xl">
-              Build expressive voice output without exposing secrets to the browser.
-            </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-700">
-              VoiceForge pairs a polished Next.js frontend with a
-              provider-abstracted Express backend, persistent generation history,
-              and deployable configs for Vercel and Render.
-            </p>
-
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a
-                className="rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-                href="#studio"
-              >
-                Open the studio
-              </a>
-              <a
-                className="rounded-full border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-950"
-                href="#history"
-              >
-                Review recent generations
-              </a>
-            </div>
-          </div>
-
-          <div className="rounded-[2rem] border border-slate-200 bg-white/70 p-6 shadow-[0_30px_120px_rgba(15,23,42,0.08)] backdrop-blur">
-            <div className="grid gap-4">
-              {highlights.map((highlight) => (
-                <div
-                  className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-700"
-                  key={highlight}
-                >
-                  {highlight}
-                </div>
-              ))}
-            </div>
-          </div>
+      <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 pb-16 pt-4 sm:px-6 sm:pb-24">
+        <section className="mx-auto max-w-2xl space-y-4 text-center">
+          <p className="text-sm tracking-[0.18em] text-[color:var(--text-faint)] uppercase">
+            Public TTS Tool
+          </p>
+          <h1 className="text-balance text-5xl tracking-[-0.04em] text-[color:var(--text-primary)] sm:text-6xl">
+            Text to Speech
+          </h1>
+          <p className="mx-auto max-w-xl text-base leading-7 text-[color:var(--text-muted)] sm:text-lg">
+            Convert text into natural speech. Free to use, open to everyone, and
+            ready the moment the page loads.
+          </p>
         </section>
 
         <VoiceForgeShell />
+
+        <section
+          className="mx-auto max-w-3xl rounded-[1.6rem] border border-[color:var(--border)] bg-[color:var(--surface-muted)] px-5 py-4 text-sm leading-7 text-[color:var(--text-muted)]"
+          id="help"
+        >
+          Paste text, keep the detected language if it looks right, choose a
+          voice and tone, then generate. The interface is intentionally public and
+          login-free, so anyone can open it and use it immediately.
+        </section>
       </main>
     </div>
   );

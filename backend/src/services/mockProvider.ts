@@ -1,3 +1,4 @@
+import { applySpeechStyle } from "./speechStyling";
 import type {
   GenerateSpeechInput,
   GeneratedSpeech,
@@ -9,27 +10,63 @@ import type {
 const SAMPLE_RATE = 22050;
 
 const CAPABILITIES: TtsCapabilities = {
+  emotions: true,
   speed: true,
   pitch: true,
-  volume: true
+  expressiveness: true,
+  languageDetection: true
 };
 
 const VOICES: VoiceOption[] = [
   {
-    id: "mock-aurora",
-    name: "Aurora",
-    languages: ["en-US"],
-    accent: "US",
-    gender: "FEMALE",
-    provider: "mock"
+    id: "mock-indian-natural",
+    name: "mock-indian-natural",
+    displayName: "Indian English - Natural",
+    description: "Balanced and everyday, with a steady Indian-English feel.",
+    presentation: "Everyday",
+    accentLabel: "English (India)",
+    languages: ["en-IN"],
+    provider: "mock",
+    quality: "Mock",
+    recommended: true,
+    sortOrder: 1
   },
   {
-    id: "mock-sohan",
-    name: "Sohan",
-    languages: ["en-IN", "hi-IN"],
-    accent: "IN",
-    gender: "MALE",
-    provider: "mock"
+    id: "mock-indian-clear",
+    name: "mock-indian-clear",
+    displayName: "Indian English - Clear",
+    description: "More stable for meetings, notes, and explainers.",
+    presentation: "Clear",
+    accentLabel: "English (India)",
+    languages: ["en-IN"],
+    provider: "mock",
+    quality: "Mock",
+    sortOrder: 2
+  },
+  {
+    id: "mock-hindi-natural",
+    name: "mock-hindi-natural",
+    displayName: "Hindi - Natural",
+    description: "Conversational Hindi with softer pacing.",
+    presentation: "Conversational",
+    accentLabel: "Hindi (India)",
+    languages: ["hi-IN"],
+    provider: "mock",
+    quality: "Mock",
+    recommended: true,
+    sortOrder: 3
+  },
+  {
+    id: "mock-british-clear",
+    name: "mock-british-clear",
+    displayName: "British English - Clear",
+    description: "A clean fallback voice for British English copy.",
+    presentation: "Clear",
+    accentLabel: "English (United Kingdom)",
+    languages: ["en-GB"],
+    provider: "mock",
+    quality: "Mock",
+    sortOrder: 4
   }
 ];
 
@@ -39,7 +76,12 @@ function writeString(view: DataView, offset: number, value: string) {
   }
 }
 
-function createWavTone(durationSeconds: number, pitchModifier: number, volume: number) {
+function createWavTone(
+  durationSeconds: number,
+  pitchShift: number,
+  expressiveness: number,
+  emotionOffset: number
+) {
   const frameCount = Math.floor(SAMPLE_RATE * durationSeconds);
   const dataLength = frameCount * 2;
   const buffer = new ArrayBuffer(44 + dataLength);
@@ -59,13 +101,18 @@ function createWavTone(durationSeconds: number, pitchModifier: number, volume: n
   writeString(view, 36, "data");
   view.setUint32(40, dataLength, true);
 
-  const baseFrequency = 220 + pitchModifier * 8;
-  const amplitude = Math.min(Math.max((volume + 96) / 112, 0.12), 0.95) * 0.6;
+  const baseFrequency = 205 + pitchShift * 18 + emotionOffset;
+  const amplitude = 0.22 + expressiveness * 0.28;
 
   for (let index = 0; index < frameCount; index += 1) {
     const envelope = 1 - index / frameCount;
+    const vibrato =
+      Math.sin((2 * Math.PI * (baseFrequency / 22) * index) / SAMPLE_RATE) *
+      (2 + expressiveness * 8);
     const sample =
-      Math.sin((2 * Math.PI * baseFrequency * index) / SAMPLE_RATE) *
+      Math.sin(
+        (2 * Math.PI * (baseFrequency + vibrato) * index) / SAMPLE_RATE
+      ) *
       amplitude *
       envelope;
 
@@ -92,27 +139,50 @@ export class MockTtsProvider implements TtsProvider {
   }
 
   async generateSpeech(input: GenerateSpeechInput): Promise<GeneratedSpeech> {
+    const appliedStyle = applySpeechStyle({
+      emotion: input.emotion,
+      speed: input.speed,
+      pitch: input.pitch,
+      expressiveness: input.expressiveness,
+      pauses: input.pauses
+    });
+    const pauseMultiplier = input.pauses ?? 1;
     const durationSeconds = Math.min(
-      Math.max(input.text.length / 90, 0.8),
-      4
+      Math.max(
+        (input.text.length / 95) * (1 / appliedStyle.speakingRate) * pauseMultiplier,
+        0.8
+      ),
+      6
     );
 
     return {
       audioBuffer: createWavTone(
         durationSeconds,
-        input.pitch ?? 0,
-        input.volume ?? 0
+        appliedStyle.pitch,
+        appliedStyle.expressiveness,
+        input.emotion === "sad"
+          ? -14
+          : input.emotion === "cheerful"
+            ? 12
+            : input.emotion === "excited"
+              ? 18
+              : input.emotion === "angry"
+                ? 10
+                : 0
       ),
       contentType: "audio/wav",
       extension: "wav",
       provider: this.name,
-      resolvedVoice: input.voice,
-      resolvedLanguage: input.language,
+      resolvedVoice: input.voice ?? "mock-indian-natural",
+      resolvedVoiceLabel: input.voiceLabel ?? "Indian English - Natural",
+      resolvedLanguage: input.language ?? "en-IN",
       metadata: {
         note: "Mock provider returns a generated tone for local smoke testing.",
-        requestedSpeed: input.speed ?? 1,
-        requestedPitch: input.pitch ?? 0,
-        requestedVolume: input.volume ?? 0
+        emotion: input.emotion,
+        speakingRate: appliedStyle.speakingRate,
+        pitch: appliedStyle.pitch,
+        expressiveness: appliedStyle.expressiveness,
+        pauses: pauseMultiplier
       }
     };
   }

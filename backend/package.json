@@ -14,7 +14,6 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@google-cloud/text-to-speech": "^6.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
@@ -32,6 +31,7 @@
     "@types/sql.js": "^1.4.9",
     "@types/supertest": "^6.0.3",
     "supertest": "^7.0.0",
+    "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   }
 }

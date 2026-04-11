@@ -1,7 +1,11 @@
 "use client";
 
 import type { HistoryRecord } from "@/lib/types";
-import { formatTimestamp } from "@/lib/utils";
+import {
+  formatEmotionLabel,
+  formatLanguageLabel,
+  formatTimestamp
+} from "@/lib/utils";
 
 import { SectionCard } from "./ui/SectionCard";
 import { StatusPill } from "./ui/StatusPill";
@@ -20,50 +24,66 @@ export function HistoryList({
   onSelect
 }: HistoryListProps) {
   return (
-    <SectionCard className="h-full" >
-      <div className="flex items-center justify-between gap-4">
+    <SectionCard className="space-y-4" id="history">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-teal-200/80">
-            Recent History
+          <p className="text-sm font-medium text-[color:var(--text-primary)]">
+            Recent generations
           </p>
-          <h2 className="mt-3 text-2xl font-semibold text-white">
-            Keep track of your most recent generations
-          </h2>
+          <p className="mt-1 text-sm text-[color:var(--text-muted)]">
+            Open an earlier render to reuse it or download it again.
+          </p>
         </div>
-        <p className="text-sm text-slate-400">{isLoading ? "Refreshing..." : `${items.length} item${items.length === 1 ? "" : "s"}`}</p>
+        <p className="text-xs text-[color:var(--text-subtle)]">
+          {isLoading ? "Refreshing..." : `${items.length} saved`}
+        </p>
       </div>
 
-      <div className="mt-6 space-y-3" id="history">
-        {!items.length ? (
-          <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-6 text-sm text-slate-300">
-            Your successful and failed generations will appear here.
-          </div>
-        ) : null}
+      {!items.length ? (
+        <div className="rounded-[1.3rem] border border-dashed border-[color:var(--border)] bg-[color:var(--surface-muted)] p-5 text-sm text-[color:var(--text-subtle)]">
+          Generated clips will appear here.
+        </div>
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-3">
+          {items.map((item) => {
+            const isActive = item.id === activeId;
 
-        {items.map((item) => (
-          <button
-            className={`w-full rounded-2xl border p-4 text-left transition ${
-              item.id === activeId
-                ? "border-teal-300/40 bg-teal-400/10"
-                : "border-white/10 bg-white/5 hover:bg-white/10"
-            }`}
-            key={item.id}
-            onClick={() => onSelect(item)}
-            type="button"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="font-medium text-white">{item.voice}</p>
-                <p className="text-sm text-slate-400">
-                  {item.language} • {formatTimestamp(item.createdAt)}
+            return (
+              <button
+                className={[
+                  "rounded-[1.3rem] border p-4 text-left transition",
+                  isActive
+                    ? "border-[color:var(--border-strong)] bg-[color:var(--surface-elevated)]"
+                    : "border-[color:var(--border)] bg-[color:var(--surface-muted)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-elevated)]"
+                ].join(" ")}
+                key={item.id}
+                onClick={() => onSelect(item)}
+                type="button"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-[color:var(--text-primary)]">
+                      {item.voiceLabel ?? item.voice}
+                    </p>
+                    <p className="mt-1 text-xs text-[color:var(--text-subtle)]">
+                      {formatLanguageLabel(item.language)} /{" "}
+                      {formatEmotionLabel(item.emotion)}
+                    </p>
+                  </div>
+                  <StatusPill status={item.status} />
+                </div>
+
+                <p className="mt-3 max-h-[4.8rem] overflow-hidden text-sm leading-6 text-[color:var(--text-muted)]">
+                  {item.text}
                 </p>
-              </div>
-              <StatusPill status={item.status} />
-            </div>
-            <p className="mt-3 line-clamp-2 text-sm text-slate-300">{item.text}</p>
-          </button>
-        ))}
-      </div>
+                <p className="mt-3 text-xs text-[color:var(--text-faint)]">
+                  {formatTimestamp(item.createdAt)}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </SectionCard>
   );
 }

@@ -13,14 +13,15 @@ const envSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
-  TTS_PROVIDER: z.enum(["google", "mock"]).default("google"),
-  GOOGLE_CLOUD_PROJECT_ID: z.string().trim().optional(),
-  GOOGLE_CLOUD_CREDENTIALS_JSON: z.string().trim().optional(),
+  TTS_PROVIDER: z.enum(["kokoro", "mock"]).default("kokoro"),
+  KOKORO_SERVICE_URL: z.string().url().optional(),
+  KOKORO_SERVICE_API_KEY: z.string().trim().optional(),
+  KOKORO_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(1000).default(60_000),
   CORS_ORIGINS: z.string().default("http://localhost:3000"),
   BACKEND_BASE_URL: z.string().url().optional(),
   DATABASE_PATH: z.string().default(defaultDatabasePath),
   AUDIO_STORAGE_PATH: z.string().default(defaultAudioStoragePath),
-  MAX_TEXT_LENGTH: z.coerce.number().int().min(100).max(5000).default(4500),
+  MAX_TEXT_LENGTH: z.coerce.number().int().min(100).max(5000).default(3200),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(60_000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().min(1).default(12),
   REQUEST_BODY_LIMIT: z.string().default("32kb")
@@ -49,8 +50,5 @@ export const env: RuntimeEnv = {
   PROVIDER_CONFIGURED:
     parsedEnv.TTS_PROVIDER === "mock"
       ? true
-      : Boolean(
-          parsedEnv.GOOGLE_CLOUD_PROJECT_ID &&
-            parsedEnv.GOOGLE_CLOUD_CREDENTIALS_JSON
-        )
+      : Boolean(parsedEnv.KOKORO_SERVICE_URL)
 };

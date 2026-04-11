@@ -3,13 +3,45 @@
 @tailwind utilities;
 
 :root {
-  --page-bg: #f7f4eb;
+  color-scheme: dark;
+  --page-bg-start: #070b12;
+  --page-bg-end: #09111c;
+  --hero-glow: rgba(255, 255, 255, 0.04);
+  --surface: rgba(255, 255, 255, 0.035);
+  --surface-strong: #0b111b;
+  --surface-muted: rgba(255, 255, 255, 0.03);
+  --surface-elevated: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.78);
+  --text-muted: rgba(255, 255, 255, 0.55);
+  --text-subtle: rgba(255, 255, 255, 0.4);
+  --text-faint: rgba(255, 255, 255, 0.28);
+  --accent: #ffffff;
+  --accent-contrast: #09111c;
+  --shadow-soft: rgba(0, 0, 0, 0.32);
 }
 
-body {
-  background:
-    radial-gradient(circle at top, rgba(20, 184, 166, 0.1), transparent 36%),
-    linear-gradient(180deg, #fffdf7 0%, #f7f4eb 48%, #efe9dc 100%);
+html[data-theme="light"] {
+  color-scheme: light;
+  --page-bg-start: #f4f7fb;
+  --page-bg-end: #eef2f7;
+  --hero-glow: rgba(15, 23, 42, 0.06);
+  --surface: rgba(255, 255, 255, 0.85);
+  --surface-strong: #ffffff;
+  --surface-muted: rgba(255, 255, 255, 0.76);
+  --surface-elevated: rgba(255, 255, 255, 0.92);
+  --border: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.16);
+  --text-primary: #09111c;
+  --text-secondary: rgba(9, 17, 28, 0.82);
+  --text-muted: rgba(9, 17, 28, 0.62);
+  --text-subtle: rgba(9, 17, 28, 0.46);
+  --text-faint: rgba(9, 17, 28, 0.34);
+  --accent: #0f172a;
+  --accent-contrast: #ffffff;
+  --shadow-soft: rgba(15, 23, 42, 0.1);
 }
 
 @layer utilities {
@@ -25,17 +57,24 @@ body {
 
   body {
     font-family: var(--font-body), sans-serif;
+    background:
+      radial-gradient(circle at top, var(--hero-glow), transparent 28rem),
+      linear-gradient(180deg, var(--page-bg-start) 0%, var(--page-bg-end) 50%, var(--page-bg-start) 100%);
+    color: var(--text-primary);
   }
 
   h1,
   h2,
   h3,
   h4 {
-    font-family: var(--font-display), serif;
     letter-spacing: -0.03em;
   }
 
+  * {
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
   ::selection {
-    background: rgba(20, 184, 166, 0.25);
+    background: color-mix(in srgb, var(--text-primary) 18%, transparent);
   }
 }

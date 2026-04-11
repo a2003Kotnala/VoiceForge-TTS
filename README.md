@@ -1,32 +1,41 @@
 # VoiceForge
 
-VoiceForge is a production-ready text-to-speech monorepo with:
+VoiceForge is a public, no-login text-to-speech app built as a polished creative tool rather than an AI dashboard. The interface is intentionally calm and minimal: paste text, let the app detect the language, choose a voice and tone, generate speech, listen in the built-in audio player, and download the result.
 
-- `frontend/`: Next.js 14 App Router UI for text input, voice controls, playback, downloads, and history
-- `backend/`: Express + TypeScript API with provider abstraction, Google Cloud TTS integration, rate limiting, history persistence, and health checks
+The monorepo is split into three deployable parts:
 
-## Features
+- `frontend/` — Next.js App Router UI for Vercel
+- `backend/` — Express + TypeScript API for Render
+- `kokoro-service/` — FastAPI Kokoro 82M inference service for Render
 
-- Type or paste text and track character limits before submission
-- Select language/accent and voice from the backend provider
-- Adjust speed, pitch, and volume when the provider supports them
-- Generate speech server-side and play it back in the browser
-- Download the generated audio file
-- View recent generation history with clear statuses
-- Provider abstraction for easy provider switching
-- Centralized validation, error handling, logging, request size limits, and rate limiting
-- SQLite-compatible history storage via `sql.js`, persisted to disk
-- Deployable split setup for Vercel frontend + Render backend
+## What It Does
 
-## Tech Stack
+- Large text editor with copy, clear, and cleanup actions
+- Automatic language detection with subtle manual override
+- Curated voice cards instead of raw provider IDs
+- Emotion selector that shapes the generation request
+- Advanced settings for speed, pitch, pauses, and delivery
+- Native browser audio playback for reliable listening
+- Downloadable audio output
+- Recent history without any account or workspace concepts
+- Rate limiting, validation, logging, and env validation on the backend
+
+## Product Direction
+
+- Public and login-free
+- Light and dark themes
+- Desktop-first, but responsive
+- Minimal layout with a centered hero and one main card
+- No paywall, no sidebar, no workspace UI, no auth prompts
+
+## Stack
 
 ### Frontend
 
 - Next.js 14 App Router
-- React 18
+- React
 - TypeScript
 - Tailwind CSS
-- Sonner for toasts
 
 ### Backend
 
@@ -35,47 +44,44 @@ VoiceForge is a production-ready text-to-speech monorepo with:
 - TypeScript
 - Zod
 - Pino
-- `@google-cloud/text-to-speech`
-- `sql.js` for persisted SQLite-style history storage
+- `sql.js` for file-backed history storage
+
+### Inference Service
+
+- FastAPI
+- Kokoro 82M
+- `misaki[en]`
+- `soundfile`
+- Docker for Render deployment
+
+## Storage
+
+VoiceForge already stores generated history and audio files.
+
+- History is stored in a file-backed `sql.js` database
+- Audio files are stored on disk and served through the backend
+- In local development this lives under `backend/data/` and `backend/storage/audio/`
+- In production, the included [render.yaml](/c:/Users/kotnala/Desktop/TTS/render.yaml) mounts a persistent Render disk at `/var/data`, so history and audio survive restarts
 
 ## Folder Structure
 
 ```text
 VoiceForge/
-├─ frontend/
-│  ├─ src/
-│  │  ├─ app/
-│  │  ├─ components/
-│  │  └─ lib/
-│  ├─ .env.example
-│  └─ package.json
-├─ backend/
-│  ├─ src/
-│  │  ├─ config/
-│  │  ├─ db/
-│  │  ├─ middleware/
-│  │  ├─ routes/
-│  │  ├─ services/
-│  │  └─ utils/
-│  ├─ storage/audio/
-│  ├─ tests/
-│  ├─ .env.example
-│  └─ package.json
-├─ .gitignore
-├─ package.json
-└─ README.md
+|-- frontend/
+|-- backend/
+|-- kokoro-service/
+|-- render.yaml
+|-- package.json
+`-- README.md
 ```
 
 ## Local Setup
 
-### 1. Install dependencies
+### 1. Install frontend and backend dependencies
 
 ```bash
-cd frontend
-npm install
-
-cd ../backend
-npm install
+npm --prefix frontend install
+npm --prefix backend install
 ```
 
 ### 2. Create environment files
@@ -86,24 +92,21 @@ cp .env.example .env.local
 
 cd ../backend
 cp .env.example .env
+
+cd ../kokoro-service
+cp .env.example .env
 ```
 
-### 3. Configure the backend
+### 3. Start the Kokoro service
 
-For real speech generation, set these backend env vars:
+This service powers the real speech generation.
 
-- `TTS_PROVIDER=google`
-- `GOOGLE_CLOUD_PROJECT_ID`
-- `GOOGLE_CLOUD_CREDENTIALS_JSON`
+```bash
+cd kokoro-service
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-For local UI smoke tests without cloud credentials, you can temporarily use:
-
-- `TTS_PROVIDER=mock`
-
-Important:
-
-- `mock` is only for local flow verification and returns a generated tone, not real speech.
-- Keep provider secrets only in `backend/.env` or Render environment variables.
+If you do not have the Kokoro dependencies available yet, you can temporarily set `TTS_PROVIDER=mock` in `backend/.env` to verify the UI and API flow with generated WAV test tones.
 
 ### 4. Start the backend
 
@@ -112,7 +115,11 @@ cd backend
 npm run dev
 ```
 
-The API defaults to `http://localhost:4000`.
+Default backend URL:
+
+```text
+http://localhost:4000
+```
 
 ### 5. Start the frontend
 
@@ -121,13 +128,17 @@ cd frontend
 npm run dev
 ```
 
-The app defaults to `http://localhost:3000`.
+Default frontend URL:
+
+```text
+http://localhost:3000
+```
 
 ## Environment Variables
 
 ### Frontend
 
-`frontend/.env.example`
+File: `frontend/.env.example`
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
@@ -135,202 +146,212 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 
 ### Backend
 
-`backend/.env.example`
+File: `backend/.env.example`
 
 ```env
 NODE_ENV=development
 PORT=4000
 LOG_LEVEL=info
-TTS_PROVIDER=google
-GOOGLE_CLOUD_PROJECT_ID=your-gcp-project-id
-GOOGLE_CLOUD_CREDENTIALS_JSON={"type":"service_account","project_id":"your-gcp-project-id","private_key_id":"your-private-key-id","private_key":"-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY\n-----END PRIVATE KEY-----\n","client_email":"voiceforge@your-gcp-project-id.iam.gserviceaccount.com","client_id":"1234567890","token_uri":"https://oauth2.googleapis.com/token"}
+TTS_PROVIDER=kokoro
+KOKORO_SERVICE_URL=http://localhost:8000
+KOKORO_SERVICE_API_KEY=change-me
+KOKORO_SERVICE_TIMEOUT_MS=60000
 CORS_ORIGINS=http://localhost:3000
 BACKEND_BASE_URL=http://localhost:4000
 REQUEST_BODY_LIMIT=32kb
 DATABASE_PATH=./data/voiceforge.db
 AUDIO_STORAGE_PATH=./storage/audio
-MAX_TEXT_LENGTH=4500
+MAX_TEXT_LENGTH=3200
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX_REQUESTS=12
 ```
 
-## Backend API
+### Kokoro Service
+
+File: `kokoro-service/.env.example`
+
+```env
+KOKORO_SERVICE_API_KEY=change-me
+KOKORO_MAX_TEXT_LENGTH=3200
+KOKORO_CACHE_ITEMS=16
+```
+
+## API Endpoints
 
 ### `GET /health`
 
-Returns:
-
-```json
-{
-  "status": "ok",
-  "service": "voiceforge-backend",
-  "provider": "google",
-  "providerConfigured": true
-}
-```
+Returns backend health and provider status.
 
 ### `GET /api/tts/voices`
 
-Returns the active provider, capabilities, max text length, and available voices.
+Returns:
 
-### `POST /api/tts/generate`
+- provider name
+- capabilities
+- defaults
+- curated voice presets
+- emotion options
 
-Accepts:
+### `POST /api/tts/analyze`
+
+Request:
 
 ```json
 {
-  "text": "Hello from VoiceForge",
-  "voice": "en-US-Neural2-D",
-  "language": "en-US",
-  "speed": 1,
-  "pitch": 0,
-  "volume": 0
+  "text": "Hello team, thanks for checking this update."
 }
 ```
 
-Returns the stored history record, including the generated audio URL.
+Response:
+
+```json
+{
+  "detectedLanguage": {
+    "code": "en-IN",
+    "label": "English",
+    "baseLanguage": "en",
+    "confidence": "medium",
+    "needsReview": false,
+    "source": "keywords"
+  },
+  "suggestedEmotion": "friendly",
+  "recommendedVoiceId": "en-IN-natural"
+}
+```
+
+### `POST /api/tts/generate`
+
+Request:
+
+```json
+{
+  "text": "Hello team, thanks for checking this update.",
+  "voice": "en-IN-natural",
+  "language": "en-IN",
+  "emotion": "friendly",
+  "speed": 1,
+  "pitch": 0,
+  "pauses": 1,
+  "expressiveness": 0.5
+}
+```
+
+Returns a stored history record with:
+
+- `audioUrl`
+- resolved voice and language
+- status
+- provider metadata
 
 ### `GET /api/history`
 
-Returns recent history entries.
+Returns recent generations for the public session view.
 
-## Tests And Build Commands
+## Commands
 
-### Frontend
+From the repo root:
 
 ```bash
-cd frontend
 npm run lint
 npm run test
 npm run build
 ```
 
-### Backend
+Or per app:
 
 ```bash
 cd backend
 npm run lint
 npm run test
 npm run build
+
+cd ../frontend
+npm run lint
+npm run test
+npm run build
 ```
 
-## GitHub Repo Setup
+## Deploy to Vercel and Render
 
-From the project root:
+### Frontend → Vercel
 
-```bash
-git init
-git add .
-git commit -m "Initial VoiceForge release"
-git branch -M main
-gh repo create voiceforge --private --source . --remote origin --push
-```
-
-If you prefer the GitHub web UI:
-
-1. Create an empty repository.
-2. Copy its remote URL.
-3. Run:
-
-```bash
-git init
-git add .
-git commit -m "Initial VoiceForge release"
-git branch -M main
-git remote add origin <your-repo-url>
-git push -u origin main
-```
-
-## Deploy Frontend To Vercel
-
-1. Push this repo to GitHub.
-2. In Vercel, import the repository.
-3. Set the **Root Directory** to `frontend`.
-4. Keep the default Next.js build settings.
-5. Add:
+1. Push the repo to GitHub.
+2. Import the repo into Vercel.
+3. Set the project Root Directory to `frontend`.
+4. Add:
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=https://your-render-service.onrender.com
+NEXT_PUBLIC_API_BASE_URL=https://your-backend.onrender.com
 ```
 
-6. Deploy.
+5. Deploy.
 
-After the first successful backend deployment, update the Vercel env var to the real Render URL if needed and redeploy.
+### Kokoro Service → Render
 
-## Deploy Backend To Render
+1. Create a new Render Web Service from this repo.
+2. Set:
+   - Root Directory: `kokoro-service`
+   - Runtime: `Docker`
+   - Health Check Path: `/health`
+3. Add:
 
-1. Push this repo to GitHub.
-2. In Render, create a new **Web Service** from the repo.
-3. Set:
+```env
+KOKORO_SERVICE_API_KEY=change-me
+KOKORO_MAX_TEXT_LENGTH=3200
+KOKORO_CACHE_ITEMS=16
+```
 
-- Root Directory: `backend`
-- Build Command: `npm install && npm run build`
-- Start Command: `npm run start`
-- Health Check Path: `/health`
+4. Deploy and note the public service URL.
 
-4. Use Node 20+.
-5. Attach a **Persistent Disk** mounted at `/var/data`.
-6. Add these environment variables:
+### Backend → Render
+
+1. Create a new Render Web Service from this repo.
+2. Set:
+   - Root Directory: `backend`
+   - Build Command: `npm install && npm run build`
+   - Start Command: `npm run start`
+   - Health Check Path: `/health`
+3. Add:
 
 ```env
 NODE_ENV=production
-PORT=10000
 LOG_LEVEL=info
-TTS_PROVIDER=google
-GOOGLE_CLOUD_PROJECT_ID=your-gcp-project-id
-GOOGLE_CLOUD_CREDENTIALS_JSON={"type":"service_account","project_id":"your-gcp-project-id","private_key_id":"your-private-key-id","private_key":"-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY\n-----END PRIVATE KEY-----\n","client_email":"voiceforge@your-gcp-project-id.iam.gserviceaccount.com","client_id":"1234567890","token_uri":"https://oauth2.googleapis.com/token"}
-BACKEND_BASE_URL=https://your-render-service.onrender.com
-CORS_ORIGINS=http://localhost:3000,https://your-frontend.vercel.app
+TTS_PROVIDER=kokoro
+KOKORO_SERVICE_URL=https://your-kokoro-service.onrender.com
+KOKORO_SERVICE_API_KEY=change-me
+KOKORO_SERVICE_TIMEOUT_MS=60000
+BACKEND_BASE_URL=https://your-backend.onrender.com
+CORS_ORIGINS=https://your-frontend.vercel.app
 REQUEST_BODY_LIMIT=32kb
 DATABASE_PATH=/var/data/voiceforge.db
 AUDIO_STORAGE_PATH=/var/data/audio
-MAX_TEXT_LENGTH=4500
+MAX_TEXT_LENGTH=3200
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX_REQUESTS=12
 ```
 
-7. Deploy the service.
+5. Deploy.
 
-If you use Vercel preview deployments and want them to hit Render, you can optionally add a wildcard origin such as `https://*.vercel.app` to `CORS_ORIGINS`.
+### Render Blueprint
+
+A starter blueprint is included at [render.yaml](/c:/Users/kotnala/Desktop/TTS/render.yaml).
 
 ## Production Checks
 
 After deployment, verify:
 
-1. `GET https://your-render-service.onrender.com/health` returns `ok` or `degraded` with a valid JSON payload.
-2. `GET /api/tts/voices` returns voices from the configured provider.
-3. The Vercel app can submit a generation request without CORS failures.
-4. Generated audio plays in the browser and downloads successfully.
-5. History persists across backend restarts because the Render disk is mounted.
-6. No provider keys appear in browser devtools or frontend source code.
-
-## Troubleshooting
-
-### The frontend says it cannot reach the backend
-
-- Confirm `NEXT_PUBLIC_API_BASE_URL` points to the Render backend URL.
-- Confirm the Render service is healthy at `/health`.
-- Confirm the backend `CORS_ORIGINS` includes your Vercel domain.
-
-### `/api/tts/voices` returns a 503
-
-- Verify `TTS_PROVIDER=google`
-- Verify `GOOGLE_CLOUD_PROJECT_ID`
-- Verify `GOOGLE_CLOUD_CREDENTIALS_JSON`
-- Confirm the service account has access to Google Cloud Text-to-Speech
-
-### Audio does not persist on Render
-
-- Confirm you attached a persistent disk.
-- Confirm `DATABASE_PATH` and `AUDIO_STORAGE_PATH` point into the mounted disk path.
-
-### The app works locally but not on Vercel
-
-- Confirm the Vercel project root is `frontend`.
-- Confirm `NEXT_PUBLIC_API_BASE_URL` uses the public Render URL, not `localhost`.
+1. `GET /health` on the backend returns `ok`.
+2. `GET /health` on the Kokoro service returns `ok`.
+3. `GET /api/tts/voices` returns the curated presets.
+4. Typing text updates the detected language.
+5. Emotion and advanced settings change the generated output metadata.
+6. Audio plays in the browser audio player and downloads correctly.
+7. No auth or login UI appears anywhere.
+8. No provider secrets are visible in the browser.
 
 ## Notes
 
-- The backend uses a provider abstraction in `backend/src/services/ttsProvider.ts`.
-- The shipped real provider is Google Cloud TTS because it supports voice listing plus speed, pitch, and volume controls.
-- The backend health endpoint will still start even if Google credentials are missing; the TTS routes return a clear `503` until provider env vars are configured.
+- The app is public by design. There is no auth layer, no workspace model, and no account requirement.
+- The backend keeps provider communication isolated behind `backend/src/services/ttsProvider.ts`.
+- The Kokoro voice layer is intentionally curated so the public UI shows a small set of practical voice choices.
+- If the Kokoro service is unavailable, the backend can still run with `TTS_PROVIDER=mock` for smoke testing.
