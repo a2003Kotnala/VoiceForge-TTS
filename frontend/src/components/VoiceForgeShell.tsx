@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ApiError, api } from "@/lib/api";
@@ -10,7 +10,13 @@ import type {
   TextAnalysisResponse,
   VoicesResponse
 } from "@/lib/types";
-import { formatLanguageLabel, sanitizeTextInput } from "@/lib/utils";
+import {
+  estimateDuration,
+  formatDuration,
+  formatEmotionLabel,
+  formatLanguageLabel,
+  sanitizeTextInput
+} from "@/lib/utils";
 
 import { ActionBar } from "./ActionBar";
 import { AdvancedSettings } from "./AdvancedSettings";
@@ -49,6 +55,7 @@ export function VoiceForgeShell() {
   const [selectedEmotion, setSelectedEmotion] =
     useState<EmotionOption>("neutral");
   const [hasEditedEmotion, setHasEditedEmotion] = useState(false);
+  const [hasEditedVoice, setHasEditedVoice] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [pitch, setPitch] = useState(0);
   const [pauses, setPauses] = useState(1);
@@ -70,13 +77,15 @@ export function VoiceForgeShell() {
         api.getHistory(9)
       ]);
 
-      setVoicesResponse(fetchedVoices);
-      setHistory(fetchedHistory.items);
-      setSelectedLanguage((current) => current || fetchedVoices.defaults.language);
-      setSelectedVoice((current) => current || fetchedVoices.defaults.voice || "");
-      setSelectedEmotion((current) =>
-        current === "neutral" ? fetchedVoices.defaults.emotion : current
-      );
+      startTransition(() => {
+        setVoicesResponse(fetchedVoices);
+        setHistory(fetchedHistory.items);
+        setSelectedLanguage((current) => current || fetchedVoices.defaults.language);
+        setSelectedVoice((current) => current || fetchedVoices.defaults.voice || "");
+        setSelectedEmotion((current) =>
+          current === "neutral" ? fetchedVoices.defaults.emotion : current
+        );
+      });
     } catch (error) {
       const message =
         error instanceof ApiError ? error.message : "Failed to load the TTS tool.";
@@ -167,6 +176,7 @@ export function VoiceForgeShell() {
         }
 
         setAnalysis(result);
+        setPageError(null);
 
         if (!manualLanguageOverride) {
           setSelectedLanguage(result.detectedLanguage.code);
@@ -176,7 +186,7 @@ export function VoiceForgeShell() {
           setSelectedEmotion(result.suggestedEmotion);
         }
 
-        if (result.recommendedVoiceId) {
+        if (!hasEditedVoice && result.recommendedVoiceId) {
           setSelectedVoice(result.recommendedVoiceId);
         }
       } catch (error) {
@@ -198,7 +208,7 @@ export function VoiceForgeShell() {
     }, 420);
 
     return () => clearTimeout(timer);
-  }, [hasEditedEmotion, manualLanguageOverride, text, voicesResponse]);
+  }, [hasEditedEmotion, hasEditedVoice, manualLanguageOverride, text, voicesResponse]);
 
   useEffect(() => {
     if (!selectedLanguage && languages.length && manualLanguageOverride) {
@@ -264,6 +274,36 @@ export function VoiceForgeShell() {
     return activeRecord;
   }, [activeRecord, hasPendingChanges, voicesResponse?.provider]);
 
+  const selectedVoiceOption = useMemo(
+    () =>
+      filteredVoices.find((voice) => voice.id === selectedVoice) ??
+      voices.find((voice) => voice.id === selectedVoice) ??
+      null,
+    [filteredVoices, selectedVoice, voices]
+  );
+
+  const estimatedDurationLabel = useMemo(
+    () => formatDuration(estimateDuration(text, speed)),
+    [speed, text]
+  );
+
+  const studioStatus = pageError
+    ? "Needs attention"
+    : isSubmitting
+      ? "Rendering"
+      : currentRecord?.audioUrl
+        ? "Ready to play"
+        : isAnalyzing
+          ? "Reading the text"
+          : "Waiting for input";
+
+  const canGenerate =
+    Boolean(text.trim()) &&
+    Boolean(selectedLanguage) &&
+    Boolean(selectedVoiceOption) &&
+    text.trim().length <= (voicesResponse?.maxTextLength ?? 3200) &&
+    !isBootstrapping;
+
   useEffect(() => {
     if (!activeRecord || !voicesResponse?.provider) {
       return;
@@ -279,17 +319,19 @@ export function VoiceForgeShell() {
 
     try {
       const fetchedHistory = await api.getHistory(9);
-      setHistory(fetchedHistory.items);
+      startTransition(() => {
+        setHistory(fetchedHistory.items);
 
-      if (preferredActiveId) {
-        const matchingRecord = fetchedHistory.items.find(
-          (item) => item.id === preferredActiveId
-        );
+        if (preferredActiveId) {
+          const matchingRecord = fetchedHistory.items.find(
+            (item) => item.id === preferredActiveId
+          );
 
-        if (matchingRecord) {
-          setActiveRecord(matchingRecord);
+          if (matchingRecord) {
+            setActiveRecord(matchingRecord);
+          }
         }
-      }
+      });
     } finally {
       setIsRefreshingHistory(false);
     }
@@ -325,10 +367,12 @@ export function VoiceForgeShell() {
         expressiveness
       });
 
-      setActiveRecord(record);
-      setHistory((current) =>
-        [record, ...current.filter((item) => item.id !== record.id)].slice(0, 9)
-      );
+      startTransition(() => {
+        setActiveRecord(record);
+        setHistory((current) =>
+          [record, ...current.filter((item) => item.id !== record.id)].slice(0, 9)
+        );
+      });
       toast.success("Speech is ready.");
 
       await refreshHistory(record.id);
@@ -387,6 +431,7 @@ export function VoiceForgeShell() {
     setSelectedLanguage(record.language);
     setManualLanguageOverride(true);
     setSelectedVoice(record.voice);
+    setHasEditedVoice(true);
     setSpeed(readNumber(record.metadata, "requestedPace", 1));
     setPitch(readNumber(record.metadata, "requestedPitch", 0));
     setExpressiveness(readNumber(record.metadata, "requestedExpressiveness", 0.5));
@@ -410,10 +455,115 @@ export function VoiceForgeShell() {
     setText("");
     setPageError(null);
     setAnalysis(null);
+    setHasEditedEmotion(false);
+    setHasEditedVoice(false);
+    setManualLanguageOverride(false);
   }
 
   return (
     <div className="space-y-6">
+      <SectionCard className="overflow-hidden p-0">
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute left-0 top-0 h-44 w-44 rounded-full bg-[color:var(--hero-glow)] blur-3xl" />
+            <div className="absolute bottom-0 right-0 h-40 w-40 rounded-full bg-[color:var(--hero-glow-strong)] blur-3xl" />
+          </div>
+
+          <div className="relative grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1.35fr)_300px]">
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[color:var(--text-faint)]">
+                  Studio Session
+                </p>
+                <h2 className="text-2xl tracking-[-0.04em] text-[color:var(--text-primary)] sm:text-3xl">
+                  Keep the first render fast, then refine only what needs it.
+                </h2>
+                <p className="max-w-2xl text-sm leading-7 text-[color:var(--text-muted)]">
+                  The editor, voice presets, and playback panel now work more like a
+                  single production flow, so you can see the current state before
+                  sending another generation request.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-[1.35rem] border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--text-faint)]">
+                    Session status
+                  </p>
+                  <p className="mt-2 text-base font-semibold text-[color:var(--text-primary)]">
+                    {studioStatus}
+                  </p>
+                </div>
+                <div className="rounded-[1.35rem] border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--text-faint)]">
+                    Selected voice
+                  </p>
+                  <p className="mt-2 text-base font-semibold text-[color:var(--text-primary)]">
+                    {selectedVoiceOption?.displayName ?? "Choose a voice"}
+                  </p>
+                </div>
+                <div className="rounded-[1.35rem] border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--text-faint)]">
+                    Delivery profile
+                  </p>
+                  <p className="mt-2 text-base font-semibold text-[color:var(--text-primary)]">
+                    {formatEmotionLabel(selectedEmotion)}
+                  </p>
+                </div>
+                <div className="rounded-[1.35rem] border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--text-faint)]">
+                    Live duration
+                  </p>
+                  <p className="mt-2 text-base font-semibold text-[color:var(--text-primary)]">
+                    {estimatedDurationLabel}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[1.6rem] border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-5">
+              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--text-faint)]">
+                Live guide
+              </p>
+              <div className="mt-4 space-y-4 text-sm leading-6 text-[color:var(--text-muted)]">
+                <div>
+                  <p className="font-medium text-[color:var(--text-primary)]">
+                    Language
+                  </p>
+                  <p>
+                    {analysis?.detectedLanguage
+                      ? `${analysis.detectedLanguage.label} (${analysis.detectedLanguage.confidence})`
+                      : selectedLanguage
+                        ? formatLanguageLabel(selectedLanguage)
+                        : "Waiting for enough text to detect"}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-medium text-[color:var(--text-primary)]">
+                    Provider
+                  </p>
+                  <p>
+                    {voicesResponse?.provider
+                      ? `${voicesResponse.provider.toUpperCase()} with ${voices.length} curated voices`
+                      : "Loading provider details"}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-medium text-[color:var(--text-primary)]">
+                    Last render
+                  </p>
+                  <p>
+                    {currentRecord?.voiceLabel
+                      ? `${currentRecord.voiceLabel} in ${formatLanguageLabel(currentRecord.language)}`
+                      : "No completed render yet"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
       <SectionCard className="p-4 sm:p-6">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_320px]">
           <div className="space-y-6">
@@ -470,17 +620,23 @@ export function VoiceForgeShell() {
             />
 
             <ActionBar
+              canGenerate={canGenerate}
               canDownload={Boolean(currentRecord?.audioUrl)}
+              estimatedDuration={estimatedDurationLabel}
               hasAudio={Boolean(currentRecord?.audioUrl)}
               hasPendingChanges={hasPendingChanges}
               isGenerating={isSubmitting || isBootstrapping}
               onDownload={handleDownload}
               onGenerate={() => void runGeneration()}
+              selectedVoiceLabel={selectedVoiceOption?.displayName ?? null}
             />
           </div>
 
           <VoiceSelector
-            onVoiceChange={setSelectedVoice}
+            onVoiceChange={(value) => {
+              setSelectedVoice(value);
+              setHasEditedVoice(true);
+            }}
             selectedVoice={selectedVoice}
             voices={filteredVoices}
           />

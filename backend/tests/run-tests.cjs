@@ -160,6 +160,90 @@ async function withBrokenKokoroService(task) {
   }
 }
 
+async function withFlakyKokoroService(task) {
+  const mockProvider = new MockTtsProvider(3200);
+  const mockResult = await mockProvider.generateSpeech({
+    text: "Hello from Kokoro",
+    voice: "mock-indian-natural",
+    voiceLabel: "Indian English - Natural",
+    language: "en-IN",
+    emotion: "friendly"
+  });
+
+  let voicesRequestCount = 0;
+
+  const server = http.createServer((req, res) => {
+    if (req.url === "/voices" && req.method === "GET") {
+      voicesRequestCount += 1;
+
+      if (voicesRequestCount === 1) {
+        res.writeHead(503, {
+          "content-type": "application/json"
+        });
+        res.end(JSON.stringify({ detail: "warming up" }));
+        return;
+      }
+
+      res.writeHead(200, {
+        "content-type": "application/json"
+      });
+      res.end(
+        JSON.stringify({
+          provider: "kokoro",
+          model: "Kokoro-82M",
+          voices: [
+            {
+              id: "en-IN-natural",
+              name: "en-IN-natural",
+              displayName: "Indian English - Natural",
+              description: "Balanced Indian English voice for everyday speech.",
+              presentation: "Everyday",
+              accentLabel: "English (India)",
+              languages: ["en-IN"],
+              provider: "kokoro",
+              quality: "Kokoro 82M",
+              recommended: true,
+              sortOrder: 1
+            }
+          ]
+        })
+      );
+      return;
+    }
+
+    if (req.url === "/synthesize" && req.method === "POST") {
+      res.writeHead(200, {
+        "content-type": "audio/wav",
+        "x-kokoro-model": "Kokoro-82M",
+        "x-kokoro-voice-id": "en-IN-natural",
+        "x-kokoro-voice-label": "Indian English - Natural",
+        "x-kokoro-language": "en-IN",
+        "x-kokoro-speed": "1.000",
+        "x-kokoro-pitch": "0.000",
+        "x-kokoro-expressiveness": "0.500",
+        "x-kokoro-cache-hit": "0"
+      });
+      res.end(mockResult.audioBuffer);
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const serviceUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    await task(serviceUrl, () => voicesRequestCount);
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
+  }
+}
+
 async function runProviderTests() {
   const mockProvider = createTtsProvider({
     provider: "mock",
@@ -231,6 +315,20 @@ async function runProviderTests() {
       }
     );
   });
+
+  await withFlakyKokoroService(async (serviceUrl, getCount) => {
+    const kokoroProvider = createTtsProvider({
+      provider: "kokoro",
+      maxTextLength: 3200,
+      kokoroServiceUrl: serviceUrl,
+      kokoroServiceTimeoutMs: 5000,
+      kokoroServiceRetryCount: 1
+    });
+
+    const voices = await kokoroProvider.getVoices();
+    assert.equal(voices[0].id, "en-IN-natural");
+    assert.equal(getCount(), 2);
+  });
 }
 
 async function createTestRuntime() {
@@ -243,6 +341,7 @@ async function createTestRuntime() {
     KOKORO_SERVICE_URL: undefined,
     KOKORO_SERVICE_API_KEY: undefined,
     KOKORO_SERVICE_TIMEOUT_MS: 5000,
+    KOKORO_SERVICE_RETRY_COUNT: 1,
     CORS_ORIGINS: "http://localhost:3000",
     CORS_ORIGIN_LIST: ["http://localhost:3000"],
     BACKEND_BASE_URL: "http://localhost:4000",

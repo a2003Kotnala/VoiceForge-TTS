@@ -51,9 +51,9 @@ export function HistoryList({
             return (
               <button
                 className={[
-                  "rounded-[1.3rem] border p-4 text-left transition",
+                  "rounded-[1.35rem] border p-4 text-left transition",
                   isActive
-                    ? "border-[color:var(--border-strong)] bg-[color:var(--surface-elevated)]"
+                    ? "border-[color:var(--border-strong)] bg-[color:var(--surface-elevated)] shadow-[0_16px_45px_var(--shadow-soft)]"
                     : "border-[color:var(--border)] bg-[color:var(--surface-muted)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-elevated)]"
                 ].join(" ")}
                 key={item.id}
@@ -76,6 +76,11 @@ export function HistoryList({
                 <p className="mt-3 max-h-[4.8rem] overflow-hidden text-sm leading-6 text-[color:var(--text-muted)]">
                   {item.text}
                 </p>
+                {item.errorMessage ? (
+                  <p className="mt-3 rounded-[1rem] border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs leading-5 text-rose-200">
+                    {item.errorMessage}
+                  </p>
+                ) : null}
                 <p className="mt-3 text-xs text-[color:var(--text-faint)]">
                   {formatTimestamp(item.createdAt)}
                 </p>

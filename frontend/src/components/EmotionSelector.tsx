@@ -29,6 +29,7 @@ export function EmotionSelector({
 
           return (
             <button
+              aria-pressed={isActive}
               className={cn(
                 "rounded-full border px-4 py-2 text-sm transition",
                 isActive

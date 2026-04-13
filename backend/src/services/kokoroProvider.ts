@@ -11,6 +11,7 @@ type KokoroProviderConfig = {
   serviceUrl: string;
   apiKey?: string;
   timeoutMs: number;
+  retryCount: number;
   maxTextLength: number;
   fetchImpl?: typeof fetch;
 };
@@ -29,8 +30,14 @@ const CAPABILITIES: TtsCapabilities = {
   languageDetection: true
 };
 
+const RETRYABLE_STATUS_CODES = new Set([429, 502, 503, 504]);
+
 function withNoTrailingSlash(value: string) {
   return value.replace(/\/$/, "");
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function fallbackErrorMessage(response: Response) {
@@ -78,6 +85,7 @@ export class KokoroProvider implements TtsProvider {
   private readonly serviceUrl: string;
   private readonly apiKey?: string;
   private readonly timeoutMs: number;
+  private readonly retryCount: number;
   private readonly fetchImpl: typeof fetch;
   private voiceCache:
     | {
@@ -85,12 +93,14 @@ export class KokoroProvider implements TtsProvider {
         voices: VoiceOption[];
       }
     | undefined;
+  private voiceCachePromise: Promise<VoiceOption[]> | undefined;
 
   constructor(config: KokoroProviderConfig) {
     this.maxTextLength = config.maxTextLength;
     this.serviceUrl = withNoTrailingSlash(config.serviceUrl);
     this.apiKey = config.apiKey;
     this.timeoutMs = config.timeoutMs;
+    this.retryCount = config.retryCount;
     this.fetchImpl = config.fetchImpl ?? fetch;
   }
 
@@ -105,22 +115,15 @@ export class KokoroProvider implements TtsProvider {
       return this.voiceCache.voices;
     }
 
-    const response = await this.performRequest("/voices", {
-      method: "GET"
-    });
-
-    if (!response.ok) {
-      throw new AppError(503, await parseError(response));
+    if (!this.voiceCachePromise) {
+      this.voiceCachePromise = this.loadVoices(now);
     }
 
-    const payload = (await response.json()) as KokoroVoicesResponse;
-
-    this.voiceCache = {
-      expiresAt: now + 10 * 60 * 1000,
-      voices: payload.voices
-    };
-
-    return payload.voices;
+    try {
+      return await this.voiceCachePromise;
+    } finally {
+      this.voiceCachePromise = undefined;
+    }
   }
 
   async generateSpeech(input: GenerateSpeechInput): Promise<GeneratedSpeech> {
@@ -179,7 +182,64 @@ export class KokoroProvider implements TtsProvider {
     };
   }
 
+  private async loadVoices(now: number) {
+    const response = await this.performRequest("/voices", {
+      method: "GET"
+    });
+
+    if (!response.ok) {
+      throw new AppError(503, await parseError(response));
+    }
+
+    const payload = (await response.json()) as KokoroVoicesResponse;
+
+    this.voiceCache = {
+      expiresAt: now + 10 * 60 * 1000,
+      voices: payload.voices
+    };
+
+    return payload.voices;
+  }
+
+  private isRetryableStatus(status: number) {
+    return RETRYABLE_STATUS_CODES.has(status);
+  }
+
+  private isRetryableError(error: unknown) {
+    return (
+      error instanceof AppError &&
+      (error.statusCode === 503 || error.statusCode === 504)
+    );
+  }
+
   private async performRequest(path: string, init: RequestInit) {
+    let attempt = 0;
+
+    while (true) {
+      try {
+        const response = await this.fetchOnce(path, init);
+
+        if (
+          response.ok ||
+          attempt >= this.retryCount ||
+          !this.isRetryableStatus(response.status)
+        ) {
+          return response;
+        }
+
+        await response.arrayBuffer();
+      } catch (error) {
+        if (attempt >= this.retryCount || !this.isRetryableError(error)) {
+          throw error;
+        }
+      }
+
+      attempt += 1;
+      await delay(150 * attempt);
+    }
+  }
+
+  private async fetchOnce(path: string, init: RequestInit) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 

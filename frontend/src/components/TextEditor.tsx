@@ -66,7 +66,12 @@ export function TextEditor({
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
-          <p className="text-sm font-medium text-[color:var(--text-primary)]">Text</p>
+          <p className="text-sm font-medium text-[color:var(--text-primary)]">
+            Script
+          </p>
+          <p className="text-sm text-[color:var(--text-muted)]">
+            Paste clean text with punctuation so Kokoro can keep the phrasing natural.
+          </p>
           <div className="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-subtle)]">
             <span
               className={cn(
@@ -111,14 +116,20 @@ export function TextEditor({
         </div>
       </div>
 
-      <textarea
-        className="min-h-[22rem] w-full resize-none rounded-[1.5rem] border border-[color:var(--border)] bg-[color:var(--surface-strong)] px-5 py-4 text-[15px] leading-7 text-[color:var(--text-primary)] outline-none transition placeholder:text-[color:var(--text-faint)] focus:border-[color:var(--border-strong)]"
-        maxLength={maxTextLength + 400}
-        onChange={(event) => onTextChange(event.target.value)}
-        placeholder="Paste a paragraph, script, announcement, or note you want to hear out loud."
-        spellCheck={false}
-        value={text}
-      />
+      <div className="overflow-hidden rounded-[1.6rem] border border-[color:var(--border)] bg-[color:var(--surface-strong)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--border)] bg-[color:var(--surface-muted)] px-4 py-3 text-xs text-[color:var(--text-subtle)]">
+          <span>Best for scripts, intros, explainers, notes, and short stories.</span>
+          <span>{text.trim() ? "Live analysis updates as you type." : "Start typing to unlock smart suggestions."}</span>
+        </div>
+        <textarea
+          className="min-h-[22rem] w-full resize-none bg-transparent px-5 py-4 text-[15px] leading-7 text-[color:var(--text-primary)] outline-none transition placeholder:text-[color:var(--text-faint)]"
+          maxLength={maxTextLength + 400}
+          onChange={(event) => onTextChange(event.target.value)}
+          placeholder="Paste a paragraph, script, announcement, or note you want to hear out loud."
+          spellCheck={false}
+          value={text}
+        />
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-muted)]">
@@ -132,6 +143,7 @@ export function TextEditor({
                 : "Auto-detect unavailable"}
           </span>
           <button
+            aria-pressed={manualLanguageOverride}
             className="transition hover:text-[color:var(--text-primary)]"
             onClick={() => onManualLanguageOverrideChange(!manualLanguageOverride)}
             type="button"

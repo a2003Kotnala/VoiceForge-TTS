@@ -4,9 +4,11 @@ import hashlib
 import io
 import os
 import re
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
+from threading import Event, Lock, Thread
 from typing import Literal
 
 import numpy as np
@@ -23,6 +25,21 @@ MAX_TEXT_LENGTH = int(os.getenv("KOKORO_MAX_TEXT_LENGTH", "3200"))
 SERVICE_API_KEY = os.getenv("KOKORO_SERVICE_API_KEY")
 VOICE_REPO_ID = os.getenv("KOKORO_VOICE_REPO_ID", "hexgrad/Kokoro-82M")
 CACHE_LIMIT = int(os.getenv("KOKORO_CACHE_ITEMS", "16"))
+INFLIGHT_WAIT_SECONDS = float(os.getenv("KOKORO_INFLIGHT_WAIT_SECONDS", "90"))
+PREWARM_ENABLED = os.getenv("KOKORO_PREWARM", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+}
+PREWARM_PRESET_IDS = tuple(
+    preset_id.strip()
+    for preset_id in os.getenv("KOKORO_PREWARM_PRESET_IDS", "").split(",")
+    if preset_id.strip()
+)
+TORCH_THREADS = int(os.getenv("KOKORO_TORCH_THREADS", "0"))
+
+if TORCH_THREADS > 0:
+    torch.set_num_threads(TORCH_THREADS)
 
 
 @dataclass(frozen=True)
@@ -214,6 +231,7 @@ class SynthesizeRequest(BaseModel):
             .replace("\u00a0", " ")
             .strip()
         )
+        cleaned = re.sub(r"[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]", "", cleaned)
         cleaned = re.sub(r"[ \t]+", " ", cleaned)
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
 
@@ -235,6 +253,21 @@ class VoiceResponse(BaseModel):
     quality: str
     recommended: bool
     sortOrder: int
+
+
+@dataclass
+class PendingSynthesis:
+    event: Event
+    status_code: int | None = None
+    detail: str | None = None
+
+
+@dataclass
+class WarmupSnapshot:
+    status: str = "idle"
+    detail: str | None = None
+    started_at: float | None = None
+    completed_at: float | None = None
 
 
 def clamp(value: float, minimum: float, maximum: float) -> float:
@@ -331,7 +364,12 @@ def load_voice_tensor(voice_name: str):
         repo_id=VOICE_REPO_ID,
         filename=f"voices/{voice_name}.pt",
     )
-    return torch.load(voice_path, map_location="cpu", weights_only=True).float()
+    try:
+        tensor = torch.load(voice_path, map_location="cpu", weights_only=True)
+    except TypeError:
+        tensor = torch.load(voice_path, map_location="cpu")
+
+    return tensor.float()
 
 
 @lru_cache(maxsize=32)
@@ -393,6 +431,15 @@ def pitch_shift_audio(audio: np.ndarray, semitones: float) -> np.ndarray:
     return np.interp(target_positions, np.arange(len(shifted), dtype=np.float32), shifted).astype(np.float32)
 
 
+def normalize_audio_part(audio: np.ndarray | list[float]) -> np.ndarray | None:
+    part = np.asarray(audio, dtype=np.float32).reshape(-1)
+
+    if part.size == 0:
+        return None
+
+    return np.nan_to_num(part, copy=False)
+
+
 def pause_for_segment(segment: str, base_pause_ms: int, expressiveness: float) -> np.ndarray:
     extra_pause = 0
     if segment.endswith("?"):
@@ -430,34 +477,184 @@ class AudioCache:
     def __init__(self, max_items: int) -> None:
         self.max_items = max_items
         self.store: OrderedDict[str, tuple[bytes, dict[str, str]]] = OrderedDict()
+        self.lock = Lock()
 
     def get(self, key: str) -> tuple[bytes, dict[str, str]] | None:
-        value = self.store.get(key)
-        if value is None:
-            return None
-        self.store.move_to_end(key)
-        return value
+        with self.lock:
+            value = self.store.get(key)
+            if value is None:
+                return None
+            self.store.move_to_end(key)
+            return value
 
     def set(self, key: str, audio_bytes: bytes, headers: dict[str, str]) -> None:
-        self.store[key] = (audio_bytes, headers)
-        self.store.move_to_end(key)
+        with self.lock:
+            self.store[key] = (audio_bytes, headers)
+            self.store.move_to_end(key)
 
-        while len(self.store) > self.max_items:
-            self.store.popitem(last=False)
+            while len(self.store) > self.max_items:
+                self.store.popitem(last=False)
+
+    def size(self) -> int:
+        with self.lock:
+            return len(self.store)
+
+
+class SynthesisCoordinator:
+    def __init__(self, wait_seconds: float) -> None:
+        self.wait_seconds = wait_seconds
+        self.pending: dict[str, PendingSynthesis] = {}
+        self.lock = Lock()
+
+    def reserve(self, key: str) -> tuple[bool, PendingSynthesis]:
+        with self.lock:
+            existing = self.pending.get(key)
+            if existing is not None:
+                return False, existing
+
+            pending = PendingSynthesis(event=Event())
+            self.pending[key] = pending
+            return True, pending
+
+    def await_existing(self, key: str, pending: PendingSynthesis) -> tuple[bytes, dict[str, str]]:
+        if not pending.event.wait(self.wait_seconds):
+            raise HTTPException(
+                status_code=504,
+                detail="Timed out while waiting for an in-flight Kokoro synthesis.",
+            )
+
+        if pending.detail is not None:
+            raise HTTPException(
+                status_code=pending.status_code or 500,
+                detail=pending.detail,
+            )
+
+        cached = audio_cache.get(key)
+        if cached is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Kokoro finished but the shared audio result was unavailable.",
+            )
+
+        return cached
+
+    def resolve(self, key: str, *, status_code: int | None = None, detail: str | None = None) -> None:
+        with self.lock:
+            pending = self.pending.pop(key, None)
+
+        if pending is not None:
+            pending.status_code = status_code
+            pending.detail = detail
+            pending.event.set()
+
+    def size(self) -> int:
+        with self.lock:
+            return len(self.pending)
 
 
 audio_cache = AudioCache(CACHE_LIMIT)
+synthesis_coordinator = SynthesisCoordinator(INFLIGHT_WAIT_SECONDS)
+warmup_snapshot = WarmupSnapshot()
+warmup_lock = Lock()
 app = FastAPI(title="VoiceForge Kokoro Service", version="1.0.0")
+
+
+def set_warmup_snapshot(status: str, detail: str | None = None) -> None:
+    now = time.time()
+
+    with warmup_lock:
+        if status == "warming":
+            warmup_snapshot.started_at = now
+            warmup_snapshot.completed_at = None
+        elif status in {"ready", "failed", "disabled"}:
+            warmup_snapshot.completed_at = now
+            if warmup_snapshot.started_at is None:
+                warmup_snapshot.started_at = now
+
+        warmup_snapshot.status = status
+        warmup_snapshot.detail = detail
+
+
+def get_warmup_snapshot() -> WarmupSnapshot:
+    with warmup_lock:
+        return WarmupSnapshot(
+            status=warmup_snapshot.status,
+            detail=warmup_snapshot.detail,
+            started_at=warmup_snapshot.started_at,
+            completed_at=warmup_snapshot.completed_at,
+        )
+
+
+def get_prewarm_preset_ids() -> tuple[str, ...]:
+    if PREWARM_PRESET_IDS:
+        preset_ids = tuple(
+            preset_id for preset_id in PREWARM_PRESET_IDS if preset_id in VOICE_PRESET_MAP
+        )
+        if preset_ids:
+            return preset_ids
+
+    defaults = ("en-IN-natural", "hi-IN-natural", "en-US-clear")
+    return tuple(preset_id for preset_id in defaults if preset_id in VOICE_PRESET_MAP)
+
+
+def prewarm_models() -> None:
+    if not PREWARM_ENABLED:
+        set_warmup_snapshot("disabled", "Prewarm is disabled.")
+        return
+
+    preset_ids = get_prewarm_preset_ids()
+    if not preset_ids:
+        set_warmup_snapshot("disabled", "No valid prewarm presets were configured.")
+        return
+
+    set_warmup_snapshot("warming", f"Preparing {len(preset_ids)} Kokoro preset(s).")
+
+    try:
+        for preset_id in preset_ids:
+            preset = VOICE_PRESET_MAP[preset_id]
+            get_pipeline(preset.lang_code)
+            build_preset_voice_tensor(preset_id)
+
+        set_warmup_snapshot(
+            "ready",
+            f"Prepared {len(preset_ids)} preset(s): {', '.join(preset_ids)}.",
+        )
+    except Exception as error:
+        set_warmup_snapshot("failed", str(error))
+
+
+@app.on_event("startup")
+def start_prewarm_thread() -> None:
+    if not PREWARM_ENABLED:
+        set_warmup_snapshot("disabled", "Prewarm is disabled.")
+        return
+
+    Thread(target=prewarm_models, name="kokoro-prewarm", daemon=True).start()
 
 
 @app.get("/health")
 def health() -> JSONResponse:
+    warmup = get_warmup_snapshot()
+
     return JSONResponse(
         {
-            "status": "ok",
+            "status": "degraded" if warmup.status == "failed" else "ok",
             "service": "voiceforge-kokoro",
             "model": "Kokoro-82M",
             "voiceCount": len(VOICE_PRESETS),
+            "warmup": {
+                "status": warmup.status,
+                "detail": warmup.detail,
+                "startedAt": warmup.started_at,
+                "completedAt": warmup.completed_at,
+            },
+            "cache": {
+                "audioItems": audio_cache.size(),
+                "pipelines": get_pipeline.cache_info().currsize,
+                "baseVoices": load_voice_tensor.cache_info().currsize,
+                "voiceMixes": build_preset_voice_tensor.cache_info().currsize,
+                "pendingSynthesis": synthesis_coordinator.size(),
+            },
         }
     )
 
@@ -523,47 +720,95 @@ def synthesize(
             headers={**headers, "x-kokoro-cache-hit": "1"},
         )
 
-    pipeline = get_pipeline(preset.lang_code)
-    voice_tensor = build_preset_voice_tensor(preset.id)
-    segments = segment_text(request.text, int(style["segment_chars"]))
-    audio_parts: list[np.ndarray] = []
-
-    for segment in segments:
-        for _, _, audio in pipeline(
-            segment,
-            voice=voice_tensor,
-            speed=float(style["speed"]),
-            split_pattern=r"\n+",
-        ):
-            audio_parts.append(np.asarray(audio, dtype=np.float32))
-
-        audio_parts.append(
-            pause_for_segment(segment, int(style["pause_ms"]), float(style["expressiveness"]))
+    is_owner, pending = synthesis_coordinator.reserve(cache_key)
+    if not is_owner:
+        audio_bytes, headers = synthesis_coordinator.await_existing(cache_key, pending)
+        return Response(
+            content=audio_bytes,
+            media_type="audio/wav",
+            headers={
+                **headers,
+                "x-kokoro-cache-hit": "1",
+                "x-kokoro-deduped": "1",
+            },
         )
 
-    if not audio_parts:
-        raise HTTPException(status_code=500, detail="Kokoro returned no audio.")
+    try:
+        pipeline = get_pipeline(preset.lang_code)
+        voice_tensor = build_preset_voice_tensor(preset.id)
+        segments = segment_text(request.text, int(style["segment_chars"]))
+        audio_parts: list[np.ndarray] = []
 
-    combined = np.concatenate(audio_parts[:-1] or audio_parts)
-    combined = pitch_shift_audio(combined, float(style["pitch"]))
-    combined = np.clip(combined, -1.0, 1.0).astype(np.float32)
+        try:
+            with torch.inference_mode():
+                for segment in segments:
+                    for _, _, audio in pipeline(
+                        segment,
+                        voice=voice_tensor,
+                        speed=float(style["speed"]),
+                        split_pattern=r"\n+",
+                    ):
+                        part = normalize_audio_part(audio)
+                        if part is not None:
+                            audio_parts.append(part)
 
-    buffer = io.BytesIO()
-    sf.write(buffer, combined, SAMPLE_RATE, format="WAV")
-    audio_bytes = buffer.getvalue()
+                    audio_parts.append(
+                        pause_for_segment(
+                            segment,
+                            int(style["pause_ms"]),
+                            float(style["expressiveness"]),
+                        )
+                    )
+        except HTTPException:
+            raise
+        except Exception as error:
+            raise HTTPException(
+                status_code=502,
+                detail="Kokoro synthesis failed during inference.",
+            ) from error
 
-    headers = {
-        "x-kokoro-model": "Kokoro-82M",
-        "x-kokoro-voice-id": preset.id,
-        "x-kokoro-voice-label": preset.display_name,
-        "x-kokoro-language": request.language or preset.languages[0],
-        "x-kokoro-speed": f"{float(style['speed']):.3f}",
-        "x-kokoro-pitch": f"{float(style['pitch']):.3f}",
-        "x-kokoro-expressiveness": f"{float(style['expressiveness']):.3f}",
-        "x-kokoro-pauses": f"{float(request.pauses):.3f}",
-        "x-kokoro-cache-hit": "0",
-    }
+        if not audio_parts:
+            raise HTTPException(status_code=500, detail="Kokoro returned no audio.")
 
-    audio_cache.set(cache_key, audio_bytes, headers)
+        combined = np.concatenate(audio_parts[:-1] or audio_parts)
+        combined = pitch_shift_audio(combined, float(style["pitch"]))
+        combined = np.clip(combined, -1.0, 1.0).astype(np.float32)
 
-    return Response(content=audio_bytes, media_type="audio/wav", headers=headers)
+        buffer = io.BytesIO()
+        sf.write(buffer, combined, SAMPLE_RATE, format="WAV")
+        audio_bytes = buffer.getvalue()
+
+        headers = {
+            "x-kokoro-model": "Kokoro-82M",
+            "x-kokoro-voice-id": preset.id,
+            "x-kokoro-voice-label": preset.display_name,
+            "x-kokoro-language": request.language or preset.languages[0],
+            "x-kokoro-speed": f"{float(style['speed']):.3f}",
+            "x-kokoro-pitch": f"{float(style['pitch']):.3f}",
+            "x-kokoro-expressiveness": f"{float(style['expressiveness']):.3f}",
+            "x-kokoro-pauses": f"{float(request.pauses):.3f}",
+            "x-kokoro-cache-hit": "0",
+            "x-kokoro-deduped": "0",
+        }
+
+        audio_cache.set(cache_key, audio_bytes, headers)
+        synthesis_coordinator.resolve(cache_key)
+
+        return Response(content=audio_bytes, media_type="audio/wav", headers=headers)
+    except HTTPException as error:
+        synthesis_coordinator.resolve(
+            cache_key,
+            status_code=error.status_code,
+            detail=str(error.detail),
+        )
+        raise
+    except Exception as error:
+        synthesis_coordinator.resolve(
+            cache_key,
+            status_code=500,
+            detail="Kokoro synthesis failed unexpectedly.",
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Kokoro synthesis failed unexpectedly.",
+        ) from error

@@ -12,6 +12,10 @@ services:
         value: 3200
       - key: KOKORO_CACHE_ITEMS
         value: 16
+      - key: KOKORO_PREWARM
+        value: 1
+      - key: KOKORO_INFLIGHT_WAIT_SECONDS
+        value: 90
 
   - type: web
     name: voiceforge-backend
@@ -45,6 +49,8 @@ services:
         sync: false
       - key: KOKORO_SERVICE_TIMEOUT_MS
         value: 60000
+      - key: KOKORO_SERVICE_RETRY_COUNT
+        value: 1
       - key: BACKEND_BASE_URL
         sync: false
       - key: CORS_ORIGINS

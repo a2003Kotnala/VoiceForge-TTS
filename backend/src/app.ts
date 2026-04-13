@@ -49,7 +49,8 @@ function buildProviderConfig(runtimeEnv: RuntimeEnv): TtsProviderFactoryConfig {
     maxTextLength: runtimeEnv.MAX_TEXT_LENGTH,
     kokoroServiceUrl: runtimeEnv.KOKORO_SERVICE_URL,
     kokoroServiceApiKey: runtimeEnv.KOKORO_SERVICE_API_KEY,
-    kokoroServiceTimeoutMs: runtimeEnv.KOKORO_SERVICE_TIMEOUT_MS
+    kokoroServiceTimeoutMs: runtimeEnv.KOKORO_SERVICE_TIMEOUT_MS,
+    kokoroServiceRetryCount: runtimeEnv.KOKORO_SERVICE_RETRY_COUNT
   };
 }
 
