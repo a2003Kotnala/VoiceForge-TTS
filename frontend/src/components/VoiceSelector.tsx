@@ -17,8 +17,8 @@ export function VoiceSelector({
       <div className="space-y-1">
         <p className="text-sm font-medium text-[color:var(--text-primary)]">Voice</p>
         <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-          Choose the voice style you want to hear. The selection stays small on
-          purpose so the first choice feels easy.
+          Choose the voice style you want to hear. The list stays curated so the
+          first choice feels confident instead of overwhelming.
         </p>
       </div>
 
@@ -28,10 +28,11 @@ export function VoiceSelector({
 
           return (
             <button
+              aria-pressed={isActive}
               className={cn(
-                "w-full rounded-[1.4rem] border p-4 text-left transition",
+                "w-full rounded-[1.45rem] border p-4 text-left transition",
                 isActive
-                  ? "border-[color:var(--border-strong)] bg-[color:var(--surface-elevated)] shadow-[0_12px_40px_var(--shadow-soft)]"
+                  ? "border-[color:var(--border-strong)] bg-[color:var(--surface-elevated)] shadow-[0_16px_45px_var(--shadow-soft)]"
                   : "border-[color:var(--border)] bg-[color:var(--surface-muted)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-elevated)]"
               )}
               key={voice.id}
@@ -45,6 +46,11 @@ export function VoiceSelector({
                 <span className="rounded-full border border-[color:var(--border)] px-2 py-1">
                   {voice.presentation}
                 </span>
+                {voice.quality ? (
+                  <span className="rounded-full border border-[color:var(--border)] px-2 py-1">
+                    {voice.quality}
+                  </span>
+                ) : null}
                 {voice.recommended ? (
                   <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-emerald-200">
                     Default

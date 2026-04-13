@@ -16,6 +16,9 @@ export function AudioPlayer({
   record,
   hasPendingChanges
 }: AudioPlayerProps) {
+  const model = typeof record?.metadata?.model === "string" ? record.metadata.model : null;
+  const cacheHit =
+    typeof record?.metadata?.cacheHit === "boolean" ? record.metadata.cacheHit : false;
   const summary = record
     ? [
         formatLanguageLabel(record.language),
@@ -64,6 +67,18 @@ export function AudioPlayer({
           <p className="text-xs text-[color:var(--text-subtle)]">
             If the browser blocks autoplay, press play directly in the control bar.
           </p>
+          <div className="flex flex-wrap gap-2 text-xs text-[color:var(--text-subtle)]">
+            {model ? (
+              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">
+                {model}
+              </span>
+            ) : null}
+            {cacheHit ? (
+              <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-emerald-200">
+                Served from cache
+              </span>
+            ) : null}
+          </div>
         </div>
       )}
 

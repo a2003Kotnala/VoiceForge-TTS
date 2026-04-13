@@ -137,6 +137,7 @@ export type TtsProviderFactoryConfig = {
   kokoroServiceUrl?: string;
   kokoroServiceApiKey?: string;
   kokoroServiceTimeoutMs: number;
+  kokoroServiceRetryCount?: number;
 };
 
 class UnavailableTtsProvider implements TtsProvider {
@@ -188,6 +189,7 @@ export function createTtsProvider(config: TtsProviderFactoryConfig): TtsProvider
     maxTextLength: config.maxTextLength,
     serviceUrl: config.kokoroServiceUrl,
     apiKey: config.kokoroServiceApiKey,
-    timeoutMs: config.kokoroServiceTimeoutMs
+    timeoutMs: config.kokoroServiceTimeoutMs,
+    retryCount: config.kokoroServiceRetryCount ?? 1
   });
 }

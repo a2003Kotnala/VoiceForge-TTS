@@ -17,6 +17,7 @@ const envSchema = z.object({
   KOKORO_SERVICE_URL: z.string().url().optional(),
   KOKORO_SERVICE_API_KEY: z.string().trim().optional(),
   KOKORO_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(1000).default(60_000),
+  KOKORO_SERVICE_RETRY_COUNT: z.coerce.number().int().min(0).max(3).default(1),
   CORS_ORIGINS: z.string().default("http://localhost:3000"),
   BACKEND_BASE_URL: z.string().url().optional(),
   DATABASE_PATH: z.string().default(defaultDatabasePath),
